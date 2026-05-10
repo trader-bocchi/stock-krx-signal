@@ -1,14 +1,29 @@
 name: Squeeze Momentum Signal Notify
 
 on:
-  # ── 자동 스케줄 ──────────────────────────────────────────────
-  schedule:
-    # 한국 시장 마감 후: KST 16:00 = UTC 07:00 (평일)
-    - cron: "0 7 * * 1-5"
-    # 미국 시장 마감 후: ET 16:30 = UTC 21:30 (평일)
-    - cron: "30 21 * * 1-5"
+  # ── 한국 시장 스케줄 (KST = UTC+9) ───────────────────────────
+  # ※ KR 4H: pykrx는 일봉 전용 → 4H 섹션은 항상 "시그널 없음" 표시
+  # 09:00 KST — 장 시작 (4H 스캔)
+  # 13:00 KST — 장 중반 (4H 봉 완성 시점)
+  # 15:30 KST — 장 마감 (1D 봉 확정)
 
-  # ── 수동 트리거 ──────────────────────────────────────────────
+  # ── 미국 시장 스케줄 (EDT UTC-4 / EST UTC-5) ─────────────────
+  # 썸머타임 대응: EDT/EST 공통 커버 가능한 시간대 선택
+  # 13:30 UTC — EDT 09:30 ET 개장 / EST 08:30 ET 프리마켓
+  # 18:00 UTC — EDT 14:00 ET 4H 중반 / EST 13:00 ET
+  # 21:00 UTC — EDT 17:00 ET 마감 후 / EST 16:00 ET 마감
+
+  schedule:
+    # KR
+    - cron: "0 0 * * 1-5"    # KST 09:00
+    - cron: "0 4 * * 1-5"    # KST 13:00
+    - cron: "30 6 * * 1-5"   # KST 15:30
+
+    # US
+    - cron: "30 13 * * 1-5"  # EDT 09:30 ET / KST 22:30
+    - cron: "0 18 * * 1-5"   # EDT 14:00 ET / KST 03:00
+    - cron: "0 21 * * 1-5"   # EDT 17:00 ET / KST 06:00
+
   workflow_dispatch:
     inputs:
       market:
@@ -27,15 +42,21 @@ env:
 
 jobs:
   # ────────────────────────────────────────────────────────────
-  # 한국 시장 스캔 (UTC 07:00 트리거 또는 수동)
+  # 한국 시장 스캔
+  # 트리거: UTC 00:00 / 04:00 / 06:30 (KST 09:00 / 13:00 / 15:30)
   # ────────────────────────────────────────────────────────────
   scan-kr:
     name: "KR 시장 스캔"
     runs-on: ubuntu-latest
-    # UTC 07:00 cron 이거나 수동으로 kr/both 선택 시만 실행
     if: |
-      (github.event_name == 'schedule' && github.event.schedule == '0 7 * * 1-5') ||
-      (github.event_name == 'workflow_dispatch' && (inputs.market == 'kr' || inputs.market == 'both'))
+      (github.event_name == 'schedule' && (
+        github.event.schedule == '0 0 * * 1-5' ||
+        github.event.schedule == '0 4 * * 1-5' ||
+        github.event.schedule == '30 6 * * 1-5'
+      )) ||
+      (github.event_name == 'workflow_dispatch' && (
+        inputs.market == 'kr' || inputs.market == 'both'
+      ))
 
     steps:
       - uses: actions/checkout@v4
@@ -53,16 +74,15 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/cache
-          key: kr-data-cache-${{ runner.os }}-${{ hashFiles('config/universe_kr.yaml') }}-${{ github.run_id }}
+          key: kr-cache-${{ runner.os }}-${{ hashFiles('config/universe_kr.yaml') }}-${{ github.run_id }}
           restore-keys: |
-            kr-data-cache-${{ runner.os }}-${{ hashFiles('config/universe_kr.yaml') }}-
-            kr-data-cache-${{ runner.os }}-
+            kr-cache-${{ runner.os }}-${{ hashFiles('config/universe_kr.yaml') }}-
+            kr-cache-${{ runner.os }}-
 
       - name: KR 시그널 스캔 및 Telegram 전송
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          NOTIFY_ENABLED: "true"
         run: python main.py --market kr --mode notify
 
       - name: 실패 시 에러 알림
@@ -71,27 +91,35 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          python - <<'EOF'
+          python - <<'PYEOF'
           import os, requests
           token = os.environ["TELEGRAM_BOT_TOKEN"]
           chat  = os.environ["TELEGRAM_CHAT_ID"]
-          text  = "❌ <b>GitHub Actions 실패</b>\nKR 스캔 워크플로우에서 오류가 발생했습니다.\nActions 로그를 확인하세요."
           requests.post(
               f"https://api.telegram.org/bot{token}/sendMessage",
-              json={"chat_id": chat, "text": text, "parse_mode": "HTML"},
+              json={"chat_id": chat,
+                    "text": "❌ <b>GitHub Actions 실패</b>\nKR 스캔 오류 — Actions 로그를 확인하세요.",
+                    "parse_mode": "HTML"},
               timeout=10,
           )
-          EOF
+          PYEOF
 
   # ────────────────────────────────────────────────────────────
-  # 미국 시장 스캔 (UTC 21:30 트리거 또는 수동)
+  # 미국 시장 스캔
+  # 트리거: UTC 13:30 / 18:00 / 21:00 (EDT 기준 09:30 / 14:00 / 17:00 ET)
   # ────────────────────────────────────────────────────────────
   scan-us:
     name: "US 시장 스캔"
     runs-on: ubuntu-latest
     if: |
-      (github.event_name == 'schedule' && github.event.schedule == '30 21 * * 1-5') ||
-      (github.event_name == 'workflow_dispatch' && (inputs.market == 'us' || inputs.market == 'both'))
+      (github.event_name == 'schedule' && (
+        github.event.schedule == '30 13 * * 1-5' ||
+        github.event.schedule == '0 18 * * 1-5'  ||
+        github.event.schedule == '0 21 * * 1-5'
+      )) ||
+      (github.event_name == 'workflow_dispatch' && (
+        inputs.market == 'us' || inputs.market == 'both'
+      ))
 
     steps:
       - uses: actions/checkout@v4
@@ -109,16 +137,15 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/cache
-          key: us-data-cache-${{ runner.os }}-${{ hashFiles('config/universe_us.yaml') }}-${{ github.run_id }}
+          key: us-cache-${{ runner.os }}-${{ hashFiles('config/universe_us.yaml') }}-${{ github.run_id }}
           restore-keys: |
-            us-data-cache-${{ runner.os }}-${{ hashFiles('config/universe_us.yaml') }}-
-            us-data-cache-${{ runner.os }}-
+            us-cache-${{ runner.os }}-${{ hashFiles('config/universe_us.yaml') }}-
+            us-cache-${{ runner.os }}-
 
       - name: US 시그널 스캔 및 Telegram 전송
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          NOTIFY_ENABLED: "true"
         run: python main.py --market us --mode notify
 
       - name: 실패 시 에러 알림
@@ -127,14 +154,15 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          python - <<'EOF'
+          python - <<'PYEOF'
           import os, requests
           token = os.environ["TELEGRAM_BOT_TOKEN"]
           chat  = os.environ["TELEGRAM_CHAT_ID"]
-          text  = "❌ <b>GitHub Actions 실패</b>\nUS 스캔 워크플로우에서 오류가 발생했습니다.\nActions 로그를 확인하세요."
           requests.post(
               f"https://api.telegram.org/bot{token}/sendMessage",
-              json={"chat_id": chat, "text": text, "parse_mode": "HTML"},
+              json={"chat_id": chat,
+                    "text": "❌ <b>GitHub Actions 실패</b>\nUS 스캔 오류 — Actions 로그를 확인하세요.",
+                    "parse_mode": "HTML"},
               timeout=10,
           )
-          EOF
+          PYEOF
