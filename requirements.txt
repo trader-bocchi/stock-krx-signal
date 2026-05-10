@@ -1,0 +1,36 @@
+# Core
+pandas>=2.0.0
+numpy>=1.24.0
+pyyaml>=6.0
+
+# Data
+yfinance>=0.2.28
+pykrx>=1.0.46
+
+# Indicators
+ta>=0.10.2
+
+# Backtest
+# vectorbt-pro is paid; use vectorbt community or backtesting.py
+# Option A (vectorbt community):
+# vectorbt>=0.26.2
+# Option B (backtesting.py):
+backtesting>=0.3.3
+
+# Visualization
+matplotlib>=3.7.0
+plotly>=5.15.0
+seaborn>=0.12.0
+
+# Utils
+tqdm>=4.65.0
+joblib>=1.3.0
+python-dateutil>=2.8.2
+
+# Notifications
+requests>=2.31.0
+python-dotenv>=1.0.0
+
+# Dev
+jupyter>=1.0.0
+ipykernel>=6.0.0

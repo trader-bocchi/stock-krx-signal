@@ -1,0 +1,43 @@
+# Global Settings for Squeeze Momentum System
+
+strategy:
+  # Bollinger Bands
+  bb_period: 20
+  bb_std: 2.0
+
+  # Keltner Channel
+  kc_period: 20
+  kc_atr_mult: 1.5
+
+  # ATR
+  atr_period: 14
+
+  # Momentum (Linear Regression)
+  momentum_period: 12
+
+  # Volume filter
+  volume_ma_period: 20
+  volume_multiplier: 1.2  # 현재 거래량이 MA의 1.2배 이상
+
+  # Signal filter
+  min_squeeze_bars: 3  # squeeze가 최소 N봉 이상 지속되어야 유효
+
+backtest:
+  initial_capital: 100_000_000  # 1억원
+  commission: 0.0025            # 0.25% (왕복 0.5%)
+  slippage: 0.001               # 0.1%
+  position_size: 0.1            # 자본의 10%
+  max_positions: 5
+  stop_loss: 0.05               # 5% stop loss
+  take_profit: null             # null = momentum 반전 시 청산
+
+data:
+  default_period: "2y"          # 기본 데이터 기간
+  cache_dir: "data/cache"
+  cache_expiry_hours: 12
+  kr_market_open: "09:00"
+  us_market_open: "09:30"
+
+walk_forward:
+  in_sample_ratio: 0.7
+  n_splits: 5

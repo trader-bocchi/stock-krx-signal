@@ -1,0 +1,31 @@
+# US Stock Universe — Q3 섹터별 우량주 Top5
+
+filters:
+  min_avg_volume: 5_000_000
+  min_data_days: 252
+  min_price: 10
+
+tickers:
+  # AI Top5
+  ai:
+    - NVDA    # AI GPU 독점
+    - META    # LLaMA, AI 광고
+    - GOOGL   # Gemini, AI 검색
+    - PLTR    # AI 데이터 플랫폼
+    - MSFT    # Azure AI, OpenAI
+
+  # Semiconductor Top5
+  semiconductor:
+    - AVGO    # AI ASIC + 네트워킹
+    - AMD     # AI GPU (NVDA 대항)
+    - ARM     # AI 엣지칩 IP
+    - ASML    # EUV 장비 독점
+    - TSM     # AI 파운드리 (TSMC ADR)
+
+  # BigTech Top5
+  bigtech:
+    - AAPL    # Apple Intelligence
+    - AMZN    # AWS AI 클라우드
+    - MSFT    # (AI 섹터와 중복 허용)
+    - META    # (AI 섹터와 중복 허용)
+    - GOOGL   # (AI 섹터와 중복 허용)

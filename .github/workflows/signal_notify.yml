@@ -1,0 +1,140 @@
+name: Squeeze Momentum Signal Notify
+
+on:
+  # ── 자동 스케줄 ──────────────────────────────────────────────
+  schedule:
+    # 한국 시장 마감 후: KST 16:00 = UTC 07:00 (평일)
+    - cron: "0 7 * * 1-5"
+    # 미국 시장 마감 후: ET 16:30 = UTC 21:30 (평일)
+    - cron: "30 21 * * 1-5"
+
+  # ── 수동 트리거 ──────────────────────────────────────────────
+  workflow_dispatch:
+    inputs:
+      market:
+        description: "스캔 대상 시장 (us / kr / both)"
+        required: true
+        default: "both"
+        type: choice
+        options:
+          - us
+          - kr
+          - both
+
+env:
+  PYTHON_VERSION: "3.11"
+  TZ: "Asia/Seoul"
+
+jobs:
+  # ────────────────────────────────────────────────────────────
+  # 한국 시장 스캔 (UTC 07:00 트리거 또는 수동)
+  # ────────────────────────────────────────────────────────────
+  scan-kr:
+    name: "KR 시장 스캔"
+    runs-on: ubuntu-latest
+    # UTC 07:00 cron 이거나 수동으로 kr/both 선택 시만 실행
+    if: |
+      (github.event_name == 'schedule' && github.event.schedule == '0 7 * * 1-5') ||
+      (github.event_name == 'workflow_dispatch' && (inputs.market == 'kr' || inputs.market == 'both'))
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python 설정
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: 의존성 설치
+        run: pip install -r requirements.txt
+
+      - name: 데이터 캐시 복원
+        uses: actions/cache@v4
+        with:
+          path: data/cache
+          key: kr-data-cache-${{ runner.os }}-${{ hashFiles('config/universe_kr.yaml') }}-${{ github.run_id }}
+          restore-keys: |
+            kr-data-cache-${{ runner.os }}-${{ hashFiles('config/universe_kr.yaml') }}-
+            kr-data-cache-${{ runner.os }}-
+
+      - name: KR 시그널 스캔 및 Telegram 전송
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          NOTIFY_ENABLED: "true"
+        run: python main.py --market kr --mode notify
+
+      - name: 실패 시 에러 알림
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python - <<'EOF'
+          import os, requests
+          token = os.environ["TELEGRAM_BOT_TOKEN"]
+          chat  = os.environ["TELEGRAM_CHAT_ID"]
+          text  = "❌ <b>GitHub Actions 실패</b>\nKR 스캔 워크플로우에서 오류가 발생했습니다.\nActions 로그를 확인하세요."
+          requests.post(
+              f"https://api.telegram.org/bot{token}/sendMessage",
+              json={"chat_id": chat, "text": text, "parse_mode": "HTML"},
+              timeout=10,
+          )
+          EOF
+
+  # ────────────────────────────────────────────────────────────
+  # 미국 시장 스캔 (UTC 21:30 트리거 또는 수동)
+  # ────────────────────────────────────────────────────────────
+  scan-us:
+    name: "US 시장 스캔"
+    runs-on: ubuntu-latest
+    if: |
+      (github.event_name == 'schedule' && github.event.schedule == '30 21 * * 1-5') ||
+      (github.event_name == 'workflow_dispatch' && (inputs.market == 'us' || inputs.market == 'both'))
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python 설정
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: 의존성 설치
+        run: pip install -r requirements.txt
+
+      - name: 데이터 캐시 복원
+        uses: actions/cache@v4
+        with:
+          path: data/cache
+          key: us-data-cache-${{ runner.os }}-${{ hashFiles('config/universe_us.yaml') }}-${{ github.run_id }}
+          restore-keys: |
+            us-data-cache-${{ runner.os }}-${{ hashFiles('config/universe_us.yaml') }}-
+            us-data-cache-${{ runner.os }}-
+
+      - name: US 시그널 스캔 및 Telegram 전송
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          NOTIFY_ENABLED: "true"
+        run: python main.py --market us --mode notify
+
+      - name: 실패 시 에러 알림
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python - <<'EOF'
+          import os, requests
+          token = os.environ["TELEGRAM_BOT_TOKEN"]
+          chat  = os.environ["TELEGRAM_CHAT_ID"]
+          text  = "❌ <b>GitHub Actions 실패</b>\nUS 스캔 워크플로우에서 오류가 발생했습니다.\nActions 로그를 확인하세요."
+          requests.post(
+              f"https://api.telegram.org/bot{token}/sendMessage",
+              json={"chat_id": chat, "text": text, "parse_mode": "HTML"},
+              timeout=10,
+          )
+          EOF

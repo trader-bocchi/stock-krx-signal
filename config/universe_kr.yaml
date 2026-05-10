@@ -1,0 +1,19 @@
+# KR Stock Universe — Q3 확정 종목
+
+filters:
+  min_avg_turnover: 10_000_000_000   # 일평균 거래대금 100억 이상
+  min_data_days: 252
+  min_price: 1000
+
+tickers:
+  semiconductor:
+    - "000660"   # SK하이닉스
+    - "005930"   # 삼성전자
+  defense:
+    - "012450"   # 한화에어로스페이스
+  energy:
+    - "034020"   # 두산에너빌리티
+  auto:
+    - "005380"   # 현대자동차
+  finance:
+    - "006800"   # 미래에셋증권
