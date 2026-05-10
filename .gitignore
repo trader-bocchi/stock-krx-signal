@@ -40,3 +40,4 @@ Thumbs.db
 # 문서/로그
 *.md
 *.log
+!README.md
