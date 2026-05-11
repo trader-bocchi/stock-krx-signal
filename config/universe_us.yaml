@@ -22,10 +22,7 @@ tickers:
     - ASML    # EUV 장비 독점
     - TSM     # AI 파운드리 (TSMC ADR)
 
-  # BigTech Top5
+  # BigTech Top5 (MSFT/META/GOOGL은 AI 섹터와 중복 제거)
   bigtech:
     - AAPL    # Apple Intelligence
     - AMZN    # AWS AI 클라우드
-    - MSFT    # (AI 섹터와 중복 허용)
-    - META    # (AI 섹터와 중복 허용)
-    - GOOGL   # (AI 섹터와 중복 허용)

@@ -20,6 +20,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+import pandas as pd
+
 # Windows 콘솔 UTF-8 출력 보장
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -81,9 +83,10 @@ def build_pipeline(cfg: Config):
 
     signal_engine = SignalEngine(
         squeeze_detector=squeeze_detector,
-        use_volume_filter=True,
-        use_trend_filter=True,
-        trend_ema_period=50,
+        use_volume_filter=s.get("use_volume_filter", True),
+        use_trend_filter=s.get("use_trend_filter", True),
+        trend_ema_period=s.get("trend_ema_period", 50),
+        signal_window_bars=s.get("signal_window_bars", 1),
     )
 
     backtest_engine = BacktestEngine(
@@ -210,8 +213,13 @@ def _alerts_from_raw_data(
             momentum      = float(last.get("momentum", 0) or 0)
             momentum_prev = float(last.get("momentum_prev", 0) or 0)
             squeeze_bars  = int(last.get("squeeze_bars", 0) or 0)
-            vol_ratio     = float(last.get("vol_ratio", 1.0) or 1.0)
-            bb_pct        = float(last.get("bb_pct", 0.5) or 0.5)
+
+            _vol_ratio = last.get("vol_ratio", 1.0)
+            vol_ratio  = float(_vol_ratio) if pd.notna(_vol_ratio) else 1.0
+
+            _bb_pct = last.get("bb_pct", 0.5)
+            bb_pct  = float(_bb_pct) if pd.notna(_bb_pct) else 0.5
+
             sector        = sector_map.get(ticker, "")
 
             kwargs = dict(

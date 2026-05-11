@@ -29,11 +29,13 @@ class SignalEngine:
         use_volume_filter: bool = True,
         use_trend_filter: bool = True,
         trend_ema_period: int = 50,
+        signal_window_bars: int = 1,
     ):
         self.detector = squeeze_detector
         self.use_volume_filter = use_volume_filter
         self.use_trend_filter = use_trend_filter
         self.trend_ema_period = trend_ema_period
+        self.signal_window_bars = signal_window_bars
 
     def generate(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -48,7 +50,19 @@ class SignalEngine:
         data = self.detector.calculate(df)
 
         # --- Entry conditions ---
-        entry = data["valid_release"].copy()
+        # valid_release는 squeeze 해제 당일 1봉만 True이므로, signal_window_bars 동안
+        # rolling max로 창을 넓혀 진입 기회를 확보한다.
+        if self.signal_window_bars > 1:
+            release_window = (
+                data["valid_release"]
+                .rolling(self.signal_window_bars, min_periods=1)
+                .max()
+                .astype(bool)
+            )
+        else:
+            release_window = data["valid_release"]
+
+        entry = release_window.copy()
         entry &= SignalFilters.momentum_positive(data)
         entry &= SignalFilters.momentum_increasing(data)
 

@@ -92,10 +92,13 @@ class KRDataProvider(DataProvider):
     @staticmethod
     def _period_to_start(period: str, end: datetime) -> datetime:
         mapping = {
-            "1y": timedelta(days=365),
-            "2y": timedelta(days=730),
-            "3y": timedelta(days=1095),
-            "5y": timedelta(days=1825),
+            "1mo": timedelta(days=30),
+            "3mo": timedelta(days=91),
+            "6mo": timedelta(days=182),
+            "1y":  timedelta(days=365),
+            "2y":  timedelta(days=730),
+            "3y":  timedelta(days=1095),
+            "5y":  timedelta(days=1825),
         }
         delta = mapping.get(period, timedelta(days=730))
         return end - delta

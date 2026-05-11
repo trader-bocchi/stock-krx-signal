@@ -17,10 +17,16 @@ strategy:
 
   # Volume filter
   volume_ma_period: 20
-  volume_multiplier: 1.2  # 현재 거래량이 MA의 1.2배 이상
+  volume_multiplier: 1.0  # 완화: 1.2 → 1.0 (거래량 >= MA 이상이면 통과)
 
   # Signal filter
-  min_squeeze_bars: 3  # squeeze가 최소 N봉 이상 지속되어야 유효
+  min_squeeze_bars: 3      # squeeze가 최소 N봉 이상 지속되어야 유효
+  signal_window_bars: 5    # valid_release 이후 N봉 내에 entry 조건 충족 시 진입 허용
+
+  # Entry filter 활성화 여부 (false로 설정 시 해당 필터 비활성화)
+  use_volume_filter: true
+  use_trend_filter: false  # 완화: EMA 추세 필터 비활성화 (신호 빈도 증가)
+  trend_ema_period: 50
 
 backtest:
   initial_capital: 100_000_000  # 1억원

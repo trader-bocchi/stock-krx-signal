@@ -14,15 +14,13 @@ on:
   # 21:00 UTC — EDT 17:00 ET 마감 후 / EST 16:00 ET 마감
 
   schedule:
-    # KR
-    - cron: "0 0 * * 1-5"    # KST 09:00
-    - cron: "0 4 * * 1-5"    # KST 13:00
-    - cron: "30 6 * * 1-5"   # KST 15:30
+    # KR — pykrx는 일봉 전용이므로 장 마감 후 1회만 실행 (15:30 KST = 06:30 UTC)
+    - cron: "30 6 * * 1-5"   # KST 15:30 장 마감 (1D 봉 확정)
 
-    # US
-    - cron: "30 13 * * 1-5"  # EDT 09:30 ET / KST 22:30
-    - cron: "0 18 * * 1-5"   # EDT 14:00 ET / KST 03:00
-    - cron: "0 21 * * 1-5"   # EDT 17:00 ET / KST 06:00
+    # US — 4H 봉 + 1D 봉 커버를 위해 하루 3회 실행
+    - cron: "30 13 * * 1-5"  # EDT 09:30 ET 개장 / KST 22:30
+    - cron: "0 18 * * 1-5"   # EDT 14:00 ET 4H 중반 / KST 03:00
+    - cron: "0 21 * * 1-5"   # EDT 17:00 ET 마감 후 (1D 봉 확정) / KST 06:00
 
   workflow_dispatch:
     inputs:
@@ -43,17 +41,17 @@ env:
 jobs:
   # ────────────────────────────────────────────────────────────
   # 한국 시장 스캔
-  # 트리거: UTC 00:00 / 04:00 / 06:30 (KST 09:00 / 13:00 / 15:30)
+  # 트리거: UTC 06:30 (KST 15:30 장 마감 후)
+  # pykrx는 일봉 전용 → 4H 섹션은 항상 "시그널 없음"
   # ────────────────────────────────────────────────────────────
   scan-kr:
     name: "KR 시장 스캔"
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: |
-      (github.event_name == 'schedule' && (
-        github.event.schedule == '0 0 * * 1-5' ||
-        github.event.schedule == '0 4 * * 1-5' ||
+      (github.event_name == 'schedule' &&
         github.event.schedule == '30 6 * * 1-5'
-      )) ||
+      ) ||
       (github.event_name == 'workflow_dispatch' && (
         inputs.market == 'kr' || inputs.market == 'both'
       ))
@@ -111,6 +109,7 @@ jobs:
   scan-us:
     name: "US 시장 스캔"
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: |
       (github.event_name == 'schedule' && (
         github.event.schedule == '30 13 * * 1-5' ||
