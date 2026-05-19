@@ -7,7 +7,7 @@ strategy:
 
   # Keltner Channel
   kc_period: 20
-  kc_atr_mult: 1.5
+  kc_atr_mult: 2.0  # 1.5 → 2.0: 현재 변동성 환경에서 squeeze 형성 빈도 정상화
 
   # ATR
   atr_period: 14

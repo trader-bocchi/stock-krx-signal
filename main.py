@@ -199,6 +199,7 @@ def _alerts_from_raw_data(
     signal_engine,
     sector_map: dict,
     now: datetime,
+    name_map: dict | None = None,
 ) -> list[SignalAlert]:
     """pre-fetched raw_data dict → SignalAlert 목록."""
     alerts: list[SignalAlert] = []
@@ -220,10 +221,17 @@ def _alerts_from_raw_data(
             _bb_pct = last.get("bb_pct", 0.5)
             bb_pct  = float(_bb_pct) if pd.notna(_bb_pct) else 0.5
 
-            sector        = sector_map.get(ticker, "")
+            sector = sector_map.get(ticker, "")
+
+            # KR 종목은 6자리 코드 대신 한글 종목명(코드) 형태로 표시
+            display_ticker = ticker
+            if market.upper() == "KR" and name_map:
+                kr_name = name_map.get(ticker)
+                if kr_name:
+                    display_ticker = f"{kr_name}({ticker})"
 
             kwargs = dict(
-                ticker=ticker,
+                ticker=display_ticker,
                 market=market.upper(),
                 close=close,
                 momentum=momentum,
@@ -237,11 +245,19 @@ def _alerts_from_raw_data(
 
             # scan_entry/scan_exit: 현재 봉(N) 기준 → 다음 봉(N+1) 시가에 진입/청산
             # long_signal/exit_signal은 백테스트 실행 타이밍용 (N-1봉 조건, 이미 지난 시그널)
+            added = False
             if last.get("scan_entry", False):
                 alerts.append(SignalAlert(signal_type="ENTRY", **kwargs))
+                added = True
             elif last.get("scan_exit", False):
-                alerts.append(SignalAlert(signal_type="EXIT", **kwargs))
-            elif last.get("squeeze_on", False) and squeeze_bars >= 3:
+                # EXIT는 최근 30봉 내 진입 시그널이 있을 때만 유효
+                # (포지션 없는 종목에 매도 시그널이 발생하는 오발령 방지)
+                recent_entry = data["scan_entry"].iloc[max(0, len(data) - 31):-1].any()
+                if recent_entry:
+                    alerts.append(SignalAlert(signal_type="EXIT", **kwargs))
+                    added = True
+            # EXIT가 억제됐더라도 squeeze가 형성 중이면 SQUEEZE_FORMING 표시
+            if not added and last.get("squeeze_on", False) and squeeze_bars >= 3:
                 alerts.append(SignalAlert(signal_type="SQUEEZE_FORMING", **kwargs))
 
         except Exception as e:
@@ -273,7 +289,8 @@ def _collect_signals(
 
     raw_data = provider.fetch_multiple(tickers, period="6mo", end_date=end_date)
     now = datetime.strptime(end_date, "%Y-%m-%d") if end_date else datetime.now()
-    alerts = _alerts_from_raw_data(raw_data, market, signal_engine, sector_map, now)
+    name_map = _KR_NAME_MAP if market == "kr" else {}
+    alerts = _alerts_from_raw_data(raw_data, market, signal_engine, sector_map, now, name_map=name_map)
     logger.info(f"[{market.upper()} 1D] 시그널 수집 완료: {len(alerts)}건")
     return alerts
 
@@ -322,7 +339,110 @@ def _build_sector_map_kr() -> dict[str, str]:
         "034020": "원전",
         "005380": "자동차",
         "006800": "금융",
+        "035420": "인터넷",
+        "035720": "인터넷",
+        "373220": "2차전지",
+        "006400": "2차전지",
+        "005490": "소재",
+        "105560": "금융",
+        "055550": "금융",
+        "068270": "바이오",
+        "207940": "바이오",
     }
+
+
+_KR_NAME_MAP: dict[str, str] = {
+    "000660": "SK하이닉스",
+    "005930": "삼성전자",
+    "012450": "한화에어로스페이스",
+    "034020": "두산에너빌리티",
+    "005380": "현대자동차",
+    "006800": "미래에셋증권",
+    "035420": "NAVER",
+    "035720": "카카오",
+    "373220": "LG에너지솔루션",
+    "006400": "삼성SDI",
+    "005490": "POSCO홀딩스",
+    "105560": "KB금융",
+    "055550": "신한지주",
+    "068270": "셀트리온",
+    "207940": "삼성바이오로직스",
+}
+
+
+def _diagnose_market(market: str, cfg: Config):
+    """종목별 현재 지표 상태를 출력해 신호 발생 여부와 이유를 확인한다."""
+    cache, signal_engine, _ = build_pipeline(cfg)
+    universe = UniverseManager()
+
+    if market == "us":
+        provider = USDataProvider(cache)
+        tickers = universe.get_us_tickers()
+        name_map: dict = {}
+    else:
+        provider = KRDataProvider(cache)
+        tickers = universe.get_kr_tickers()
+        name_map = _KR_NAME_MAP
+
+    raw_data = provider.fetch_multiple(tickers, period="6mo")
+
+    print(f"\n{'종목':<22} {'sqz_on':7} {'sqz봉':6} {'v_rel':6} {'mom':9} {'mom>0':6} {'mom↑':5} {'vol':5} {'→':3}")
+    print("-" * 80)
+
+    for ticker, df in raw_data.items():
+        try:
+            data = signal_engine.generate(df)
+            if data.empty:
+                continue
+            last = data.iloc[-1]
+
+            sqz_on       = bool(last.get("squeeze_on", False))
+            sqz_bars     = int(last.get("squeeze_bars", 0) or 0)
+            valid_rel    = bool(last.get("valid_release", False))
+            mom          = float(last.get("momentum", 0) or 0)
+            mom_prev     = float(last.get("momentum_prev", 0) or 0)
+            vol_surge    = bool(last.get("vol_surge", False))
+            scan_entry   = bool(last.get("scan_entry", False))
+            scan_exit    = bool(last.get("scan_exit", False))
+
+            # release_window: valid_release가 최근 signal_window_bars 내에 있었는지
+            sw = cfg.strategy.get("signal_window_bars", 5)
+            in_window = bool(data["valid_release"].rolling(sw, min_periods=1).max().iloc[-1])
+
+            display = name_map.get(ticker, ticker) if market == "kr" else ticker
+            # 실제 발송 로직과 동일하게 tag 결정
+            if scan_entry:
+                signal_tag = "✅BUY"
+            elif scan_exit:
+                recent_e = data["scan_entry"].iloc[max(0, len(data) - 31):-1].any()
+                signal_tag = "🟥SELL" if recent_e else ("🟡SQZ" if (sqz_on and sqz_bars >= 3) else "—")
+            elif sqz_on and sqz_bars >= 3:
+                signal_tag = "🟡SQZ"
+            else:
+                signal_tag = "—"
+
+            # 조건 중 첫 번째로 막히는 지점 표시
+            if scan_entry:
+                block = "ENTRY"
+            elif not in_window:
+                block = "no_squeeze"
+            elif mom <= 0:
+                block = "mom≤0"
+            elif mom <= mom_prev:
+                block = "mom↓"
+            elif not vol_surge:
+                block = "vol↓"
+            else:
+                block = "?"
+
+            print(
+                f"{display:<22} {'ON' if sqz_on else 'off':7} {sqz_bars:6d} "
+                f"{'Y' if valid_rel else 'n':6} {mom:+9.3f} "
+                f"{'Y' if mom > 0 else 'N':6} {'Y' if mom > mom_prev else 'N':5} "
+                f"{'Y' if vol_surge else 'N':5} {signal_tag}  ({block})"
+            )
+        except Exception as e:
+            print(f"  [{ticker}] 오류: {e}")
 
 
 def run_scan(market: str, cfg: Config):
@@ -332,15 +452,17 @@ def run_scan(market: str, cfg: Config):
     print(f"\n=== Squeeze Momentum Scan [{market.upper()}] ===")
     if not alerts:
         print("  활성 시그널 없음.")
-        return
+    else:
+        for a in alerts:
+            print(
+                f"  [{a.signal_type:16s}] {a.ticker:10s}  "
+                f"close={a.close:>12,.2f}  "
+                f"mom={a.momentum:+.4f}  "
+                f"sqz={a.squeeze_bars}봉"
+            )
 
-    for a in alerts:
-        print(
-            f"  [{a.signal_type:16s}] {a.ticker:10s}  "
-            f"close={a.close:>12,.2f}  "
-            f"mom={a.momentum:+.4f}  "
-            f"sqz={a.squeeze_bars}봉"
-        )
+    print(f"\n=== 종목별 진단 [{market.upper()}] ===")
+    _diagnose_market(market, cfg)
 
 
 def run_notify(market: str, cfg: Config, end_date: Optional[str] = None):
